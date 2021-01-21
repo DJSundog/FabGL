@@ -62,8 +62,9 @@ lldesc_t volatile *      VGADirectController::s_frameResetDesc;
 
 
 
-VGADirectController::VGADirectController()
-  : m_drawScanlineCallback(nullptr)
+VGADirectController::VGADirectController(bool autoRun)
+  : m_drawScanlineCallback(nullptr),
+    m_autoRun(autoRun)
 {
   s_instance = this;
 }
@@ -78,8 +79,9 @@ void VGADirectController::init()
 
 void VGADirectController::allocateViewPort()
 {
-  for (int i = 0; i < VGAD_LinesCount; ++i)
-    m_lines[i] = (uint8_t*) heap_caps_malloc(m_viewPortWidth, MALLOC_CAP_DMA);
+  m_lines[0] = (uint8_t*) heap_caps_malloc(m_viewPortWidth * VGAD_LinesCount, MALLOC_CAP_DMA);
+  for (int i = 1; i < VGAD_LinesCount; ++i)
+    m_lines[i] = m_lines[0] + i * m_viewPortWidth;
 }
 
 
@@ -87,10 +89,9 @@ void VGADirectController::freeViewPort()
 {
   VGABaseController::freeViewPort();
 
-  for (int i = 0; i < VGAD_LinesCount; ++i) {
-    heap_caps_free((void*)m_lines[i]);
+  heap_caps_free((void*)m_lines[0]);
+  for (int i = 0; i < VGAD_LinesCount; ++i)
     m_lines[i] = nullptr;
-  }
 }
 
 
@@ -102,8 +103,17 @@ void VGADirectController::setResolution(VGATimings const& timings, int viewPortW
 
   VGABaseController::setResolution(timings, viewPortWidth, viewPortHeight, doubleBuffered);
 
+  if (m_autoRun)
+    run();
+}
+
+
+void VGADirectController::run()
+{
   // must be started before interrupt alloc
   startGPIOStream();
+
+  s_scanLine = 0;
 
   // ESP_INTR_FLAG_LEVEL1: should be less than PS2Controller interrupt level, necessary when running on the same core
   if (m_isr_handle == nullptr) {
@@ -232,6 +242,10 @@ void VGADirectController::rawDrawBitmap_RGBA8888(int destX, int destY, Bitmap co
 
 void IRAM_ATTR VGADirectController::ISRHandler(void * arg)
 {
+  #if FABGLIB_VGAXCONTROLLER_PERFORMANCE_CHECK
+  auto s1 = getCycleCount();
+  #endif
+
   auto ctrl = (VGADirectController *) arg;
 
   if (I2S1.int_st.out_eof) {
@@ -243,7 +257,7 @@ void IRAM_ATTR VGADirectController::ISRHandler(void * arg)
 
     int scanLine = (s_scanLine + VGAD_LinesCount / 2) % ctrl->m_viewPortHeight;
 
-    auto lineIndex = scanLine % VGAD_LinesCount;
+    auto lineIndex = scanLine & (VGAD_LinesCount - 1);
 
     for (int i = 0; i < VGAD_LinesCount / 2; ++i) {
 
@@ -256,6 +270,10 @@ void IRAM_ATTR VGADirectController::ISRHandler(void * arg)
     s_scanLine += VGAD_LinesCount / 2;
 
   }
+
+  #if FABGLIB_VGAXCONTROLLER_PERFORMANCE_CHECK
+  s_vgapalctrlcycles += getCycleCount() - s1;
+  #endif
 
   I2S1.int_clr.val = I2S1.int_st.val;
 }

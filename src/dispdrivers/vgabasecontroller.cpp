@@ -46,6 +46,12 @@
 namespace fabgl {
 
 
+#if FABGLIB_VGAXCONTROLLER_PERFORMANCE_CHECK
+  volatile uint64_t s_vgapalctrlcycles = 0;
+#endif
+
+
+
 VGABaseController::VGABaseController()
 {
 }
@@ -115,6 +121,10 @@ void VGABaseController::end()
     }
     suspendBackgroundPrimitiveExecution();
     m_GPIOStream.stop();
+
+    // just in case interrupt is still runing
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+
     freeBuffers();
   }
 }

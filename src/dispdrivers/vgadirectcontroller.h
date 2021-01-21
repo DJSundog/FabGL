@@ -77,7 +77,12 @@ class VGADirectController : public VGABaseController {
 
 public:
 
-  VGADirectController();
+  /**
+   * @brief Initializes a new instance of VGADirectController
+   *
+   * @param autoRun If True display is active after setResolution() has been called. If False you need to call VGADirectController.run() to start the display.
+   */
+  VGADirectController(bool autoRun = true);
 
   // unwanted methods
   VGADirectController(VGADirectController const&) = delete;
@@ -92,9 +97,9 @@ public:
   static VGADirectController * instance() { return s_instance; }
 
   // abstract method of BitmappedDisplayController
-  NativePixelFormat nativePixelFormat()               { return NativePixelFormat::PALETTE16; }
+  NativePixelFormat nativePixelFormat()               { return NativePixelFormat::SBGR2222; }
 
-  // import "modeline" v3rsion of setResolution
+  // import "modeline" version of setResolution
   using VGABaseController::setResolution;
 
   void setResolution(VGATimings const& timings, int viewPortWidth = -1, int viewPortHeight = -1, bool doubleBuffered = false);
@@ -108,6 +113,13 @@ public:
    * @param arg Argument to pass to the callback
    */
   void setDrawScanlineCallback(DrawScanlineCallback drawScanlineCallback, void * arg = nullptr) { m_drawScanlineCallback = drawScanlineCallback; m_drawScanlineArg = arg; }
+
+  /**
+   * @brief Begins to call the callback function and to display video frames
+   *
+   * You need to call this only when VGADirectController constructor has been called with autoRun = false.
+   */
+  void run();
 
 private:
 
@@ -188,6 +200,8 @@ private:
   // so it would not have been possible to put ISR into IRAM.
   DrawScanlineCallback         m_drawScanlineCallback;
   void *                       m_drawScanlineArg;
+
+  bool                         m_autoRun;
 
 };
 
