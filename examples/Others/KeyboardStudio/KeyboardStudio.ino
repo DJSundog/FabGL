@@ -53,9 +53,10 @@ void printHelp()
   printInfo();
 
   xprintf("Commands:\r\n");
-  xprintf("  1 = US Layout  2 = UK Layout      3 = DE Layout\r\n");
-  xprintf("  4 = IT Layout  5 = ES Layout\r\n");
-  xprintf("  r = Reset      s = Scancode Mode  a = VirtualKey/ASCII Mode\r\n");
+  xprintf("  1 = US Layout       2 = UK Layout       3 = DE Layout\r\n");
+  xprintf("  4 = IT Layout       5 = ES Layout\r\n");
+  xprintf("  r = Reset           s = Scancode Mode   a = VirtualKey/ASCII Mode\r\n");
+  xprintf("  q = Scancode set 1  w = Scancode set 2\r\n");
   xprintf("  l = Test LEDs\r\n");
   xprintf("Various:\r\n");
   xprintf("  h = Print This help\r\n\n");
@@ -167,7 +168,6 @@ void loop()
         xprintf("VirtualKey/ASCII mode\r\n");
         break;
       case 'l':
-      {
         for (int i = 0; i < 8; ++i) {
           keyboard->setLEDs(i & 1, i & 2, i & 4);
           delay(1000);
@@ -176,30 +176,35 @@ void loop()
         if (keyboard->setLEDs(0, 0, 0))
           xprintf("OK\r\n");
         break;
-      }
+      case 'q':
+        keyboard->setScancodeSet(1);
+        xprintf("Scancode Set = %d\r\n", keyboard->scancodeSet());
+        break;
+      case 'w':
+        keyboard->setScancodeSet(2);
+        xprintf("Scancode Set = %d\r\n", keyboard->scancodeSet());
+        break;
     }
   }
 
   if (mode == 's' && keyboard->scancodeAvailable()) {
-    // scancode mode (show scancodes)
+    // scancode mode (show scancodes). Because we are using virtual keys, the scancode set here is always 2.
     xprintf("Scancode = 0x%02X\r\n", keyboard->getNextScancode());
   } else if (keyboard->virtualKeyAvailable()) {
-    // ascii mode (show ASCII and VirtualKeys)
-    bool down;
-    auto vk = keyboard->getNextVirtualKey(&down);
-    //if (vk != lastvk) {
-      xprintf("VirtualKey = %s", keyboard->virtualKeyToString(vk));
-      int c = keyboard->virtualKeyToASCII(vk);
-      if (c > -1) {
-        xprintf("\tASCII = 0x%02X\t", c);
-        if (c >= ' ')
-          xprintf("%c", c);
-      }
-      if (!down)
-        xprintf("\tUP");
+    // ascii mode (show ASCIIl, VirtualKeys and scancodes)
+    VirtualKeyItem item;
+    if (keyboard->getNextVirtualKey(&item)) {
+      xprintf("%s: ", keyboard->virtualKeyToString(item.vk));
+      xprintf("\tASCII = 0x%02X\t", item.ASCII);
+      if (item.ASCII >= ' ')
+        xprintf("'%c'", item.ASCII);
+      xprintf("\t%s", item.down ? "DN" : "UP");
+      xprintf("\t[");
+      for (int i = 0; i < 8 && item.scancode[i] != 0; ++i)
+        xprintf("%02X ", item.scancode[i]);
+      xprintf("]");
       xprintf("\r\n");
-      //lastvk = down ? vk : fabgl::VK_NONE;
-    //}
+    }
   }
 
 }
