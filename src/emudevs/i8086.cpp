@@ -33,14 +33,15 @@ namespace fabgl {
 
 #pragma GCC optimize ("O3")
 
-
-///*
-#if TESTING_CPU == 1
-  #define REGS_BASE                                0xE0000  // for test186 tests
-#else
-  #define REGS_BASE                                0xF0000  // normal use
+#if FABGL_ESP_IDF_VERSION > FABGL_ESP_IDF_VERSION_VAL(3, 3, 3)
+  #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #endif
-//*/
+
+
+#ifndef REGS_BASE
+  #define REGS_BASE 0xF0000  // normal use
+#endif
+
 
 //static uint8_t rrr[46];
 //static int32_t REGS_BASE;
@@ -83,20 +84,33 @@ namespace fabgl {
 #define REG_BH                                   7
 
 
-// FLAGS register
+// FLAGS
 
-static uint8_t flags[10];
-
-#define CF_ADDR 0
-#define PF_ADDR 1
-#define AF_ADDR 2
-#define ZF_ADDR 3
-#define SF_ADDR 4
-#define TF_ADDR 5
-#define IF_ADDR 6
-#define DF_ADDR 7
-#define OF_ADDR 8
-#define XX_ADDR 9
+#if I8086_FLAGSINREGS
+  #define flags regs8
+  #define CF_ADDR 40
+  #define PF_ADDR 41
+  #define AF_ADDR 42
+  #define ZF_ADDR 43
+  #define SF_ADDR 44
+  #define TF_ADDR 45
+  #define IF_ADDR 46
+  #define DF_ADDR 47
+  #define OF_ADDR 48
+  #define XX_ADDR 49
+#else
+  static uint8_t flags[10];
+  #define CF_ADDR 0
+  #define PF_ADDR 1
+  #define AF_ADDR 2
+  #define ZF_ADDR 3
+  #define SF_ADDR 4
+  #define TF_ADDR 5
+  #define IF_ADDR 6
+  #define DF_ADDR 7
+  #define OF_ADDR 8
+  #define XX_ADDR 9
+#endif
 
 #define FLAG_CF                                  (flags[CF_ADDR])
 #define FLAG_PF                                  (flags[PF_ADDR])
@@ -107,8 +121,6 @@ static uint8_t flags[10];
 #define FLAG_IF                                  (flags[IF_ADDR])
 #define FLAG_DF                                  (flags[DF_ADDR])
 #define FLAG_OF                                  (flags[OF_ADDR])
-
-
 
 
 
@@ -465,6 +477,12 @@ uint16_t i8086::SP()
 }
 
 
+uint16_t i8086::CS()
+{
+  return regs16[REG_CS];
+}
+
+
 uint16_t i8086::ES()
 {
   return regs16[REG_ES];
@@ -548,12 +566,11 @@ uint8_t & IRAM_ATTR i8086::MEM8(int addr)
 {
   uint8_t opcode = s_memory[16 * regs16[REG_CS] + reg_ip];
   uint8_t opcode2 = s_memory[16 * regs16[REG_CS] + reg_ip + 1];
-  if (addr >= 0xA0000 && addr < 0xC0000) {
+  if (addr >= VIDEOMEM_START && addr < VIDEOMEM_END) {
     if (opcode != 0x8b && opcode != 0xa5 && opcode != 0x8a && opcode != 0x30 && opcode != 0x32 && opcode != 0x86 && opcode != 0x20 && opcode != 0x08
         && opcode != 0xa4 && opcode != 0x22 && opcode != 0xac && opcode != 0x31 && opcode != 0xad)
       printf("8 bit video access, addr %05X instr %02X, %02X\n", addr, opcode, opcode2);
   }
-  //printf("MEM8(%05X)[%02X] instr %02X\n", addr, s_memory[addr], opcode);
   return s_memory[addr];
 }
 
@@ -566,10 +583,9 @@ uint16_t & IRAM_ATTR i8086::MEM16(int addr)
         && opcode != 0xa4 && opcode != 0x22 && opcode != 0xac && opcode != 0x31 && opcode != 0xad)
       printf("16 bit video access, addr %05X instr %02X, %02X\n", addr, opcode, opcode2);
   }
-  //printf("MEM16(%05X)[%04X] instr %02X\n", addr, *(uint16_t*)(s_memory + addr), opcode);
   return *(uint16_t*)(s_memory + addr);
 }
-//*/
+*/
 
 
 // monitored (video) write
@@ -578,7 +594,7 @@ void IRAM_ATTR i8086::WMEM8(int addr, uint8_t value)
 {
   if (addr >= VIDEOMEM_START && addr < VIDEOMEM_END)
     s_writeVideoMemory8(s_context, addr, value);
-  s_memory[addr] = value;
+  MEM8(addr) = value;
 }
 
 
@@ -586,7 +602,7 @@ void IRAM_ATTR i8086::WMEM16(int addr, uint16_t value)
 {
   if (addr >= VIDEOMEM_START && addr < VIDEOMEM_END)
     s_writeVideoMemory16(s_context, addr, value);
-  *(uint16_t*)(s_memory + addr) = value;
+  MEM16(addr) = value;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -641,7 +657,6 @@ uint16_t i8086::make_flags()
 }
 
 
-// Set emulated CPU FLAGS register from regs8[FLAG_xx] values
 void i8086::set_flags(int new_flags)
 {
   FLAG_CF = (new_flags >> 0) & 1;
@@ -678,7 +693,6 @@ uint8_t i8086::pc_interrupt(uint8_t interrupt_num)
   }
 
   if (!s_interrupt(s_context, interrupt_num)) {
-
     regs16[REG_SP] -= 2;
     MEM16(16 * regs16[REG_SS] + regs16[REG_SP]) = make_flags();
 
@@ -727,9 +741,8 @@ void i8086::reset()
 {
   //REGS_BASE = (int32_t)(rrr - s_memory);
 
-  // regs16 and reg8 point to F000:0, the start of memory-mapped registers
-  regs8  = ( uint8_t  * ) ( s_memory + REGS_BASE ) ; // Base + 000F.0000
-  regs16 = ( uint16_t * ) ( s_memory + REGS_BASE ) ; // Base + 000F.0000
+  regs8  = (uint8_t *)(s_memory + REGS_BASE);
+  regs16 = (uint16_t *)(s_memory + REGS_BASE);
 
   memset(regs8, 0, 48);
   set_flags(0);
@@ -858,7 +871,7 @@ void IRAM_ATTR i8086::step()
     // POP reg
     case 0x58 ... 0x5f:
       regs16[REG_SP] += 2;  // SP may be read from stack, so we have to increment here
-      regs16[*opcode_stream & 7] = MEM16(16 * regs16[REG_SS] + regs16[REG_SP] - 2);
+      regs16[*opcode_stream & 7] = MEM16(16 * regs16[REG_SS] + (uint16_t)(regs16[REG_SP] - 2));
       ++reg_ip;
       break;
 
@@ -1540,19 +1553,17 @@ void i8086::stepEx(uint8_t const * opcode_stream)
     }
     case 19: // RET|RETF|IRET
       i_d = i_w;
+      reg_ip = MEM16(16 * regs16[REG_SS] + regs16[REG_SP]);
       regs16[REG_SP] += 2;
-      reg_ip = MEM16(16 * regs16[REG_SS] + (uint16_t)(-2 + regs16[REG_SP]));
       if (extra) {
         // IRET|RETF|RETF imm16
+        regs16[REG_CS] = MEM16(16 * regs16[REG_SS] + regs16[REG_SP]);
         regs16[REG_SP] += 2;
-        op_dest = regs16[REG_CS];
-        regs16[REG_CS] = MEM16(16 * regs16[REG_SS] + (uint16_t)(-2 + regs16[REG_SP]));
       }
       if (extra & 2) {
         // IRET
+        set_flags(MEM16(16 * regs16[REG_SS] + regs16[REG_SP]));
         regs16[REG_SP] += 2;
-        op_result = MEM16(16 * regs16[REG_SS] + (uint16_t)(-2 + regs16[REG_SP]));
-        set_flags(op_result);
       } else if (!i_d) // RET|RETF imm16
         regs16[REG_SP] += i_data0;
       calcIP = false;
@@ -1708,6 +1719,53 @@ void i8086::stepEx(uint8_t const * opcode_stream)
       //printf("CPU HALT, IP = %04X:%04X, AX = %04X, BX = %04X, CX = %04X, DX = %04X\n", regs16[REG_CS], reg_ip, regs16[REG_AX], regs16[REG_BX], regs16[REG_CX], regs16[REG_DX]);
       s_halted = true;
       calcIP = false;
+      break;
+    /*
+    case 51: // 80186, NEC V20: ENTER
+      printf("80186, NEC V20: ENTER\n");
+      break;
+    case 52: // 80186, NEC V20: LEAVE
+      printf("80186, NEC V20: LEAVE\n");
+      break;
+    case 53: // 80186, NEC V20: PUSHA
+      printf("80186, NEC V20: PUSHA\n");
+      break;
+    case 54: // 80186, NEC V20: POPA
+      printf("80186, NEC V20: POPA\n");
+      break;
+    case 55: // 80186: BOUND
+      printf("80186: BOUND\n");
+      break;
+    case 56: // 80186, NEC V20: PUSH imm16
+      printf("80186, NEC V20: PUSH imm16\n");
+      break;
+    case 57: // 80186, NEC V20: PUSH imm8
+      printf("80186, NEC V20: PUSH imm8\n");
+      break;
+    case 58: // 80186 IMUL
+      printf("80186 IMUL\n");
+      break;
+    case 59: // 80186: INSB INSW
+      printf("80186: INSB INSW\n");
+      break;
+    case 60: // 80186: OUTSB OUTSW
+      printf("80186: OUTSB OUTSW\n");
+      break;
+    case 69: // 8087 MATH Coprocessor
+      printf("8087 MATH Coprocessor %02X %02X %02X %02X\n", opcode_stream[0], opcode_stream[1], opcode_stream[2], opcode_stream[3]);
+      break;
+    case 70: // 80286+
+      printf("80286+\n");
+      break;
+    case 71: // 80386+
+      printf("80386+\n");
+      break;
+    case 72: // BAD OP CODE
+      printf("Bad 8086 opcode %02X %02X\n", opcode_stream[0], opcode_stream[1]);
+      break;
+      */
+    default:
+      printf("Unsupported 8086 opcode %02X %02X\n", opcode_stream[0], opcode_stream[1]);
       break;
   }
 

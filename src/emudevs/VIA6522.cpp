@@ -25,6 +25,11 @@
 
 #pragma GCC optimize ("O2")
 
+#if FABGL_ESP_IDF_VERSION > FABGL_ESP_IDF_VERSION_VAL(3, 3, 3)
+  #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#endif
+
+
 
 namespace fabgl {
 
@@ -153,6 +158,7 @@ void VIA6522::writeReg(int reg, int value)
       // clear CA1 and CA2 interrupt flags
       m_IFR &= ~VIA_IER_CA1;
       m_IFR &= ~VIA_IER_CA2;
+      // not break!
     // ORA: Output Register A - no Handshake
     case VIA_REG_ORA_IRA_NH:
       m_ORA = value;

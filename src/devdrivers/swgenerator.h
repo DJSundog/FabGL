@@ -34,7 +34,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include "rom/lldesc.h"
+
+#if __has_include("esp32/rom/lldesc.h")
+  #include "esp32/rom/lldesc.h"
+#else
+  #include "rom/lldesc.h"
+#endif
 
 #include "fabglconf.h"
 
